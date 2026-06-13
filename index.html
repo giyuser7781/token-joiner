@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Solve Captcha</title>
+  <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a2e;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #e0e0e0;
+    }
+
+    .card {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 16px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      text-align: center;
+    }
+
+    .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #ffffff;
+    }
+
+    p.subtitle {
+      font-size: 14px;
+      color: #9ba4b4;
+      margin-bottom: 28px;
+      line-height: 1.5;
+    }
+
+    .captcha-wrap {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 24px;
+      min-height: 78px;
+    }
+
+    button#done-btn {
+      display: none;
+      width: 100%;
+      padding: 13px;
+      background: #5865f2;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button#done-btn:hover  { background: #4752c4; }
+    button#done-btn:active { background: #3c45a5; }
+
+    #status {
+      margin-top: 20px;
+      font-size: 14px;
+      min-height: 20px;
+      font-weight: 500;
+    }
+    .status-sending  { color: #faa61a; }
+    .status-success  { color: #43b581; }
+    .status-error    { color: #f04747; }
+
+    .session-tag {
+      margin-top: 24px;
+      font-size: 11px;
+      color: #4a5568;
+      word-break: break-all;
+    }
+
+    .error-card {
+      background: #2d1515;
+      border: 1px solid #f04747;
+      border-radius: 10px;
+      padding: 20px;
+      margin-top: 16px;
+      font-size: 13px;
+      color: #f04747;
+    }
+  </style>
+</head>
+<body>
+<div class="card" id="main-card">
+  <div class="icon">🤖</div>
+  <h1>Captcha Verification</h1>
+  <p class="subtitle">
+    Discord is asking you to verify you're human.<br/>
+    Solve the challenge below, then click <strong>Done</strong>.
+  </p>
+
+  <div class="captcha-wrap" id="captcha-wrap">
+    <!-- hCaptcha widget injected here -->
+  </div>
+
+  <button id="done-btn" onclick="submitSolution()">✅ Done — Submit Solution</button>
+
+  <div id="status"></div>
+  <div class="session-tag" id="session-tag"></div>
+</div>
+
+<script>
+  // ─── Parse URL params ───────────────────────────────────────────────────────
+  const params       = new URLSearchParams(window.location.search);
+  const sitekey      = params.get("sitekey")      || "";
+  const sessionId    = params.get("session_id")   || "";
+  const callbackUrl  = params.get("callback_url") || "";
+  const rqdata       = params.get("rqdata")       || "";
+
+  let captchaSolution = null;
+
+  // ─── Validate params ────────────────────────────────────────────────────────
+  if (!sitekey || !sessionId || !callbackUrl) {
+    document.getElementById("main-card").innerHTML = `
+      <div class="icon">❌</div>
+      <h1>Invalid Link</h1>
+      <p class="subtitle">This link is missing required parameters.<br/>
+      Please use the link from the Discord webhook alert.</p>
+      <div class="error-card">
+        Missing: ${!sitekey ? "sitekey " : ""}${!sessionId ? "session_id " : ""}${!callbackUrl ? "callback_url" : ""}
+      </div>`;
+  } else {
+    document.getElementById("session-tag").textContent = `Session: ${sessionId}`;
+    renderCaptcha();
+  }
+
+  // ─── Render hCaptcha ────────────────────────────────────────────────────────
+  function renderCaptcha() {
+    // Wait for hCaptcha API to be ready
+    const waitForHcaptcha = setInterval(() => {
+      if (typeof hcaptcha !== "undefined") {
+        clearInterval(waitForHcaptcha);
+
+        const widgetOpts = {
+          sitekey:  sitekey,
+          callback: onSolved,
+          "error-callback": onCaptchaError,
+          "expired-callback": onExpired,
+          theme:    "dark",
+        };
+
+        // Attach rqdata if Discord provided it (needed for invisible / enterprise captchas)
+        if (rqdata) {
+          widgetOpts["rqdata"] = rqdata;
+        }
+
+        hcaptcha.render("captcha-wrap", widgetOpts);
+      }
+    }, 100);
+  }
+
+  // ─── Captcha callbacks ──────────────────────────────────────────────────────
+  function onSolved(token) {
+    captchaSolution = token;
+    document.getElementById("done-btn").style.display = "block";
+    setStatus("✅ Captcha solved! Click <strong>Done</strong> to submit.", "status-success");
+  }
+
+  function onCaptchaError(err) {
+    setStatus(`❌ Captcha error: ${err || "unknown"}. Try refreshing the page.`, "status-error");
+  }
+
+  function onExpired() {
+    captchaSolution = null;
+    document.getElementById("done-btn").style.display = "none";
+    setStatus("⏰ Captcha expired — please solve it again.", "status-error");
+  }
+
+  // ─── Submit solution back to Railway ───────────────────────────────────────
+  async function submitSolution() {
+    if (!captchaSolution) {
+      setStatus("⚠️ No captcha solution yet — please solve the widget first.", "status-error");
+      return;
+    }
+
+    document.getElementById("done-btn").disabled = true;
+    setStatus("⏳ Sending solution to bot…", "status-sending");
+
+    try {
+      const res = await fetch(callbackUrl, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ session_id: sessionId, token: captchaSolution }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+
+      if (res.ok && body.status === "ok") {
+        setStatus("🎉 Solution accepted! The bot will now retry your action.", "status-success");
+        document.getElementById("done-btn").textContent = "✅ Submitted";
+      } else {
+        const msg = body.message || `HTTP ${res.status}`;
+        setStatus(`❌ Server rejected the solution: ${msg}`, "status-error");
+        document.getElementById("done-btn").disabled = false;
+      }
+    } catch (err) {
+      setStatus(`❌ Network error: ${err.message}`, "status-error");
+      document.getElementById("done-btn").disabled = false;
+    }
+  }
+
+  // ─── Helper ─────────────────────────────────────────────────────────────────
+  function setStatus(html, cls) {
+    const el = document.getElementById("status");
+    el.innerHTML = html;
+    el.className = cls || "";
+  }
+</script>
+</body>
+</html>
