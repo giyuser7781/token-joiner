@@ -308,9 +308,14 @@ async def get_user_guilds(token: str) -> tuple[int, list]:
             return r.status, []
 
 
-async def _do_join(token: str, invite_code: str, captcha_token: str | None = None) -> tuple[int, dict]:
+ async def _do_join(token: str, invite_code: str, captcha_token: str | None = None) -> tuple[int, dict]:
     headers = make_headers(token)
-    body: dict = {}
+    ctx_props = base64.b64encode(
+        json.dumps({"location": "Join Guild", "location_guild_id": None,
+                    "location_channel_id": None, "location_channel_type": None},
+                   separators=(",", ":")).encode()
+    ).decode()
+    headers["X-Context-Properties"] = ctx_props
     if captcha_token:
         headers["X-Captcha-Key"] = captcha_token
     async with aiohttp.ClientSession() as s:
